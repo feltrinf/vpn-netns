@@ -7,7 +7,7 @@
 # Spawn or attach to a tmux server running in the network namespace
 attach()
 {
-  name=${1-vpn}
+  #name=${1-vpn}
   if [ $UID -ne 0 ]; then
     exec tmux -L $name attach
   else
@@ -18,7 +18,7 @@ attach()
 # Set up a network namespace
 start()
 {
-  name=${1-vpn}
+  #name=${1-vpn}
   addrbase=${2-172.31.99}
 
   # Create a virtual ethernet pair device to let the namespace reach us
@@ -74,7 +74,7 @@ start()
 # Tear down a previously created network namespace
 stop()
 {
-  name=${1-vpn}
+  #name=${1-vpn}
   #addrbase=$(ip addr show $name.1 |
   #  sed -n 's/.*inet \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
   pids=$(ip netns pids $name)
@@ -100,6 +100,7 @@ stop()
 
 command="$1"
 shift
+name=${1-vpn}
 
 case "$command" in
   "start" | "stop" | "attach")
