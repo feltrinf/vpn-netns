@@ -24,12 +24,29 @@ start()
   # Create a virtual ethernet pair device to let the namespace reach us
   ip link add $name.1 type veth peer name $name.2
 
+  # Find the last used address in the network 
+  last_addr=$(ip addr show to $addrbase.0/16 |
+    sed -n 's/.*inet \([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\).*/\1/p'| sort -r)
+
+  last_addr=$(cut -d " " -f 1 <<<$last_addr)
+
+  # Get next available pair of addresses
+  if [ "$last_addr" = "" ]; then
+	host_addr=$addrbase.1
+  else
+	host_addr="${last_addr%.*}.$((${last_addr##*.} + 2))"
+  fi
+
+  peer_addr="${host_addr%.*}.$((${host_addr##*.} + 1))"
+
   # Set up our end of the veth device
-  ip addr add $addrbase.1 peer $addrbase.2 dev $name.1
+  #ip addr add $addrbase.1 peer $addrbase.2 dev $name.1
+  ip addr add $host_addr peer $peer_addr dev $name.1
   ip link set $name.1 up
 
   # Basic NAT
-  iptables -t nat -A POSTROUTING -s $addrbase.2 -o $natiface -j MASQUERADE
+  #iptables -t nat -A POSTROUTING -s $addrbase.2 -o $natiface -j MASQUERADE
+  iptables -t nat -A POSTROUTING -s $peer_addr -o $natiface -j MASQUERADE
 
   # Create custom resolv.conf for the namespace
   mkdir -p /etc/netns/$name
@@ -43,9 +60,11 @@ start()
 
   # Set up networking in the namespace
   ip netns exec $name bash -c "
-    ip addr add $addrbase.2 peer $addrbase.1 dev $name.2
+    #ip addr add $addrbase.2 peer $addrbase.1 dev $name.2
+	ip addr add $peer_addr peer $host_addr dev $name.2
     ip link set $name.2 up
-    ip route add default via $addrbase.1
+    #ip route add default via $addrbase.1
+	ip route add default via $host_addr
     ip link set lo up"
 
   # Create a tmux session in the namespace and attach to it
@@ -56,8 +75,8 @@ start()
 stop()
 {
   name=${1-vpn}
-  addrbase=$(ip addr show $name.1 |
-    sed -n 's/.*inet \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+  #addrbase=$(ip addr show $name.1 |
+  #  sed -n 's/.*inet \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
   pids=$(ip netns pids $name)
 
   # Refuse further operation if some processes are still running there
@@ -67,8 +86,15 @@ stop()
     exit 1
   fi
 
+  # Get the exact peer address
+  host_addr=$(ip addr show $name.1 |
+    sed -n 's/.*inet \([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+
+  peer_addr="${host_addr%.*}.$((${host_addr##*.} + 1))"
+
   ip link del $name.1
-  iptables -t nat -D POSTROUTING -s $addrbase.2 -o $natiface -j MASQUERADE
+  #iptables -t nat -D POSTROUTING -s $addrbase.2 -o $natiface -j MASQUERADE
+  iptables -t nat -D POSTROUTING -s $peer_addr -o $natiface -j MASQUERADE
   ip netns del $name
 }
 
