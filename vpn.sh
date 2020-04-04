@@ -19,7 +19,7 @@ attach()
 start()
 {
   name=${1-vpn}
-  addrbase=${2-192.168.99}
+  addrbase=${2-172.31.99}
 
   # Create a virtual ethernet pair device to let the namespace reach us
   ip link add $name.1 type veth peer name $name.2
