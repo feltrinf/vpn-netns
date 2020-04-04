@@ -11,7 +11,7 @@ attach()
   if [ $UID -ne 0 ]; then
     exec tmux -L $name attach
   else
-    exec ip netns exec $name su -c "exec tmux -L $name new -A" $SUDO_USER
+    exec ip netns exec $name su -c "exec tmux -L $name new -A -n $name" $SUDO_USER
   fi
 }
 
