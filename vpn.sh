@@ -3,7 +3,10 @@
 # Guess the outgoing interface from default route
 : ${natiface=$(ip route show to 0/0 |
 	       sed -n '/^default/{s/.* dev \([^ ]*\).*/\1/p;q}')}
-
+	       
+: ${snat_addr=$(ip addr show ${natiface} |
+	       sed -n 's/.*inet \([0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')}
+	       
 # Spawn or attach to a tmux server running in the network namespace
 attach()
 {
@@ -46,12 +49,23 @@ start()
 
   # Basic NAT
   #iptables -t nat -A POSTROUTING -s $addrbase.2 -o $natiface -j MASQUERADE
-  iptables -t nat -A POSTROUTING -s $peer_addr -o $natiface -j MASQUERADE
+  
+  # https://wiki.strongswan.org/projects/strongswan/wiki/ForwardingAndSplitTunneling
+  iptables -t nat -A POSTROUTING -s $peer_addr/32 -o $natiface -m policy --dir out --pol ipsec -j ACCEPT
+  iptables -t nat -A POSTROUTING -s $peer_addr/32 -o $natiface -j SNAT --to-source $snat_addr 
 
   # Create custom resolv.conf for the namespace
   mkdir -p /etc/netns/$name
   sed /127.0.0.1/d </etc/resolv.conf >/etc/netns/$name/resolv.conf
 
+  # in case Strongswan is used in this namespace
+  # https://wiki.strongswan.org/projects/strongswan/wiki/Netns
+  mkdir -p /etc/netns/$name/ipsec.d/run
+
+  # custom ipsec configuration, if any
+  mkdir -p /etc/netns/$name/ipsec.d/cacerts
+  mkdir -p /etc/netns/$name/ipsec.d/config
+  
   # Create the namespace itself
   ip netns add $name
 
@@ -61,10 +75,10 @@ start()
   # Set up networking in the namespace
   ip netns exec $name bash -c "
     #ip addr add $addrbase.2 peer $addrbase.1 dev $name.2
-	ip addr add $peer_addr peer $host_addr dev $name.2
+    ip addr add $peer_addr peer $host_addr dev $name.2
     ip link set $name.2 up
     #ip route add default via $addrbase.1
-	ip route add default via $host_addr
+    ip route add default via $host_addr
     ip link set lo up"
 
   # Create a tmux session in the namespace and attach to it
@@ -94,7 +108,9 @@ stop()
 
   ip link del $name.1
   #iptables -t nat -D POSTROUTING -s $addrbase.2 -o $natiface -j MASQUERADE
-  iptables -t nat -D POSTROUTING -s $peer_addr -o $natiface -j MASQUERADE
+  iptables -t nat -D POSTROUTING -s $peer_addr/32 -o $natiface -j SNAT --to-source $snat_addr 
+  iptables -t nat -D POSTROUTING -s $peer_addr/32 -o $natiface -m policy --dir out --pol ipsec -j ACCEPT
+  
   ip netns del $name
 }
 
